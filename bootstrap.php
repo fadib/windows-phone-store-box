@@ -4,7 +4,7 @@ Plugin Name: Windows Phone Store Box
 Plugin URI:  http://wordpress.org/plugins/windows-phone-store-box
 Description: Displaying windowsphone.com store app information in a box inside post or page.
 Version:     0.1
-Author:      fahmiadib
+Author:      Fahmi Adib
 Author URI:  http://fahmiadib.wordpress.com
 License:     GPLv2 or later
 */
@@ -12,7 +12,7 @@ License:     GPLv2 or later
 if ( $_SERVER['SCRIPT_FILENAME'] == __FILE__ )
 	die( 'Access denied.' );
 
-define( 'WPSBOX_NAME',                 'Windows Phone Store Box' );
+define( 'WPSBOX_NAME',                 'WPS Box' );
 define( 'WPSBOX_REQUIRED_PHP_VERSION', '5.2' );
 define( 'WPSBOX_REQUIRED_WP_VERSION',  '3.5' );
 
@@ -47,6 +47,7 @@ function wpsbox_requirements_error() {
  * Loads all the files that make up WPSBOX
  */
 function wpsbox_include_files() {
+	require_once( dirname( __FILE__ ) . '/classes/wpsbox-module.php' );
 	require_once( dirname( __FILE__ ) . '/classes/wpsbox.php' );
 	require_once( dirname( __FILE__ ) . '/classes/wpsbox-settings.php' );
 	require_once( dirname( __FILE__ ) . '/classes/wpsbox-shortcode.php' );
