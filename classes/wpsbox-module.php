@@ -3,25 +3,26 @@
 if ( $_SERVER['SCRIPT_FILENAME'] == __FILE__ )
 	die( 'Access denied.' );
 
+if ( !function_exists('get_called_class') ) {
+    function get_called_class() {
+        $bt = debug_backtrace();
+        $lines = file( $bt[1]['file'] );
+        preg_match(
+            '/([a-zA-Z0-9\_]+)::' . $bt[1]['function'] . '/',
+            $lines[ $bt[1]['line'] - 1 ],
+            $matches
+        );
+        return $matches[1];
+    }
+}
+
 if ( ! class_exists( 'WPSBoxModule' ) ) {
 	/**
 	 * Abstract class to define/implement base methods for all module classes
 	 * @package WPSBox
 	 */
 	abstract class WPSBoxModule {
-		protected static $__CLASS__ = __CLASS__;
 		private static $instances = array();
-		
-		/**
-		 * get_called_class() replacement for PHP 5.2
-		 */
-		protected static function get_class_local() {
-	        if ( self::$__CLASS__ == __CLASS__ ) {
-	            die("You MUST provide a <code>protected static \$__CLASS__ = __CLASS__;</code> statement in your Singleton-class!");
-	        }
-    
-	        return self::$__CLASS__;
-	    }
 		
 		/**
 		 * Constructor
@@ -34,9 +35,9 @@ if ( ! class_exists( 'WPSBoxModule' ) ) {
 		 * @mvc Controller
 		 * @return object
 		 */
-		public static function get_instance() {
-			$module = self::get_class_local();
-			
+		static function get_instance() {
+			$module = get_called_class();
+
 			if ( ! isset( self::$instances[ $module ] ) ) {
 				self::$instances[ $module ] = new $module();
 			}
