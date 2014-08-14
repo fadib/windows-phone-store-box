@@ -8,7 +8,8 @@ if ( ! class_exists( 'WPSBox' ) ) {
 	 * Main / front controller class
 	 * @package WPSBox
 	 */
-	class WPSBox {
+	class WPSBox extends WPSBoxModule {
+		protected static $__CLASS__ = __CLASS__;
 		protected static $readable_properties  = array( 'modules' );
 		protected static $writeable_properties = array( 'modules' );
 		protected $modules;
