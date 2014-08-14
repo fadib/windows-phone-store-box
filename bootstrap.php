@@ -60,7 +60,7 @@ function wpsbox_include_files() {
  */
 if ( wpsbox_requirements_met() ) {
 	wpsbox_include_files();
-
+	
 	if ( class_exists( 'WPSBox' ) ) {
 		$GLOBALS['wpsbox'] = WPSBox::get_instance();
 
