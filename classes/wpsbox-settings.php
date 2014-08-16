@@ -14,11 +14,13 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		protected static $default_settings;
 		protected static $readable_properties  = array( 'settings' );
 		protected static $writeable_properties = array( 'settings' );
+		protected $setting_names;
 		
-		const REQUIRED_CAPABILITY = 'manage_options';
-		const MENU_SLUG           = 'wpsbox';
-		const SETTING_SLUG        = 'wpsbox_settings';
-
+		const REQUIRED_CAPABILITY 	= 'manage_options';
+		const MENU_SLUG           	= 'wpsbox';
+		const SETTING_SLUG        	= 'wpsbox_settings';
+		const SETTING_TITLE			= 'WPSBox';
+		const SETTING_PREFIX		= 'wps_box_';
 
 		/**
 		 * Constructor
@@ -26,25 +28,10 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		 */
 		protected function __construct() {
 			$this->register_hook_callbacks();
-		}
-
-		/**
-		 * Public setter for protected variables
-		 * Updates settings outside of the Settings API or other subsystems
-		 * @mvc Controller
-		 *
-		 * @param string $variable
-		 * @param array  $value This will be merged with WPSBoxSettings->settings, so it should mimic the structure of the WPSBoxSettings::$default_settings. It only needs the contain the values that will change, though. See WPSBox->upgrade() for an example.
-		 */
-		public function __set( $variable, $value ) {
-			// Note: wpsboxModule::__set() is automatically called before this
-
-			if ( $variable != 'settings' ) {
-				return;
+			$this->setting_names = array( 'Cache Duration (days)' );
+			foreach ( $this->setting_names as $key ) {
+				self::$default_settings[ __CLASS__ ][ $this->slugify_key( $key ) ] = '';
 			}
-
-			$this->settings = self::validate_settings( $value );
-			update_option( WPSBox::PREFIX . 'settings', $this->settings );
 		}
 
 		/**
@@ -55,8 +42,7 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 			add_action( 'init',                                 array( $this, 'init' ) );
 			add_action( 'admin_init',                           array( $this, 'register_settings' ) );
 			add_action( 'admin_menu',                           __CLASS__ . '::register_settings_pages' );
-
-			add_filter( 'shortcode_atts_' . self::SETTING_SLUG, array( $this, 'maintain_nested_settings' ), 10, 3 );
+			
 			add_filter(
 				'plugin_action_links_' . plugin_basename( dirname( __DIR__ ) ) . '/bootstrap.php',
 				__CLASS__ . '::add_plugin_action_links'
@@ -92,7 +78,7 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		 * @return array
 		 */
 		protected static function get_default_settings() {
-			return apply_filters( WPSBox::PREFIX . 'default_settings', array( 'url' => '' ) );
+			return self::$default_settings;
 		}
 
 		/**
@@ -103,9 +89,9 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		protected static function get_settings() {
 			$settings = shortcode_atts(
 				self::$default_settings,
-				get_option( WPSBox::PREFIX . 'settings', array() )
+				get_option( WPSBox::PREFIX . 'settings' )
 			);
-
+			
 			return $settings;
 		}
 
@@ -143,6 +129,7 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		 */
 		public static function markup_settings_page() {
 			if ( current_user_can( self::REQUIRED_CAPABILITY ) ) {
+				$class = get_called_class();
 				require_once( dirname( __DIR__ ) . '/views/wpsbox-settings/page-settings.php' );
 			} else {
 				wp_die( 'Access denied.' );
@@ -154,6 +141,28 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		 * @mvc Controller
 		 */
 		public function register_settings() {
+			add_settings_section(
+				self::SETTING_PREFIX . 'section',
+				'',
+				__CLASS__ . '::markup_settings_section_header',
+				WPSBox::PREFIX . 'settings'
+			);
+
+			foreach ( self::get_instance()->setting_names as $setting ) {
+				$slug = $this->slugify_key( $setting );
+
+				if ( self::is_public_setting( $setting ) ) {
+					add_settings_field(
+						self::SETTING_PREFIX . $slug,
+						$setting,
+						array( $this, 'markup_settings_fields' ),
+						WPSBox::PREFIX . 'settings',
+						self::SETTING_PREFIX . 'section',
+						array( 'label_for' => self::SETTING_PREFIX . $slug )
+					);
+				}
+			}
+
 			register_setting(
 				self::SETTING_SLUG,
 				self::SETTING_SLUG,
@@ -171,7 +180,38 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		public function validate_settings( $new_settings ) {
 			$new_settings = shortcode_atts( $this->settings, $new_settings, self::SETTING_SLUG );
 			
+			foreach ( $new_settings[ __CLASS__ ] as $key => $value ) {
+				$new_settings[ __CLASS__ ][ $key ] = absint( $value ); 
+			}
 			return $new_settings;
 		}
+		
+		/**
+		 * Adds the section introduction text to the Settings page
+		 * @mvc Controller
+		 *
+		 * @param array $section
+		 */
+		public static function markup_settings_section_header( $section ) {
+			require_once( dirname( __DIR__ ) . '/views/wpsbox-settings/page-settings-section-header.php' );
+		}
+		
+		/**
+		 * Delivers the markup for settings fields
+		 * @mvc Controller
+		 *
+		 * @param array $field
+		 */
+		public function markup_settings_fields( $field ) {
+			$class = get_called_class();
+			$setting = str_replace( $class::SETTING_PREFIX, '', $field['label_for'] );
+			
+			require_once( dirname( __DIR__ ) . '/views/wpsbox-settings/page-settings-fields.php' );
+		}
+		
+		public function slugify_key( $key ) {
+			return trim( strtolower( str_replace( array( ' ', ')', '(' ), '_', $key ) ), ' _' );
+		}
+		
 	} // end WPSBoxSettings
 }
