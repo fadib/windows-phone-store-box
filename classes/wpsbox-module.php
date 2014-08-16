@@ -70,5 +70,17 @@ if ( ! class_exists( 'WPSBoxModule' ) ) {
 		 * @mvc Controller
 		 */
 		abstract public function init();
+		
+		/**
+		 * Determines if a setting is intended to be public/visible or not
+		 * @mvc Controller
+		 *
+		 * @param string $setting_name
+		 * @return bool
+		 */
+		public function is_public_setting( $setting_name ) {
+			return '_' != substr( $setting_name, 0, 1 ) ? true : false;
+		}
+				
 	} // end WPSBoxModule
 }
