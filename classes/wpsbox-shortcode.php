@@ -10,9 +10,9 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 	 * @package wpsbox
 	 */
 	class WPSBoxShortcode extends WPSBoxModule {
-		protected $refresh_interval, $view_folder;
-		protected static $readable_properties  = array( 'refresh_interval', 'view_folder' );
-		protected static $writeable_properties = array( 'refresh_interval' );
+		protected $cache_duration, $view_folder;
+		protected static $readable_properties  = array( 'cache_duration', 'view_folder' );
+		protected static $writeable_properties = array( 'cache_duration' );
 		
 		const SHORTCODE_NAME = 'wpsbox';
 
@@ -47,8 +47,8 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		 */
 		public function register_hook_callbacks() {
 			add_action( 'init',												array( $this, 'init' ) );
-			add_action( 'wp_ajax_'.        WPSBox::PREFIX . 'render_box', 	array( $this, 'render_box' ) );
-			add_action( 'wp_ajax_nopriv_'. WPSBox::PREFIX . 'render_box',	array( $this, 'render_box' ) );
+			// add_action( 'wp_ajax_'.        WPSBox::PREFIX . 'render_box', 	array( $this, 'render_box' ) );
+			// add_action( 'wp_ajax_nopriv_'. WPSBox::PREFIX . 'render_box',	array( $this, 'render_box' ) );
 			add_shortcode( self::SHORTCODE_NAME,							array( $this, 'shortcode_wpsbox' ) );
 		}
 
@@ -57,7 +57,7 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		 * @mvc Controller
 		 */
 		public function init() {
-			$this->refresh_interval = apply_filters( WPSBox::PREFIX . 'refresh_interval', 30 );
+			$this->cache_duration = apply_filters( WPSBox::PREFIX . 'cache_duration', 0 );
 		}
 
 		/**
@@ -68,8 +68,8 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		 */
 		public function shortcode_wpsbox( $attributes ) {
 			$attributes = shortcode_atts( array( 'url' => '' ), $attributes );
+			
 			$items = array();
-
 			if ( $attributes['url'] ) {
 				$items = self::get_wpsbox( $attributes['url'] );
 			}
@@ -80,29 +80,26 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		}
 
 		/**
-		 * Gets all of the items from all of the media sources that are assigned to the given hashtag
+		 * Gets all of the attributes from the source url
 		 * @mvc Model
 		 *
 		 * @param string $hashtag
 		 * @return array
 		 */
 		protected function get_wpsbox( $url ) {
-			$items = array();
-			return $items;
-			
-			$term = get_term_by( 'name', $hashtag, TGGRMediaSource::TAXONOMY_HASHTAG_SLUG );
-			if ( isset ( $term->slug ) ) {
-				$items = get_posts( array(
-					'posts_per_page'   => apply_filters( WPSBox::PREFIX . 'media_items_per_page', 30 ),
-					'post_type'        => $post_types,
-					'tax_query'        => array(
-						array(
-							'taxonomy' => TGGRMediaSource::TAXONOMY_HASHTAG_SLUG,
-							'field'    => 'slug',
-							'terms'    => $term->slug,
-						),
-					),
-				) );
+			$items = get_posts( array(
+				'posts_per_page' => 1,
+				'post_type' => WPSBoxSettings::POST_TYPE_SLUG,
+				'meta_query' => array(
+					array(
+						'key' => 'app_url',
+						'value' => $url,
+					)
+				)
+			) );
+
+			if ( ( $items && post_cache_expired( $items ) ) || empty( $items ) ) {
+				$items = $this->fetch_app_info( $url );
 			}
 
 			return $items;
@@ -114,52 +111,162 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		 * @mvc Controller
 		 */
 		public function render_box() {
-			$hashtag = sanitize_text_field( $_REQUEST['url'] );
+			$url = sanitize_text_field( $_REQUEST['url'] );
 
 			$this->send_ajax_headers( 'text/html' );
 
-			if ( empty( $hashtag ) ) {
+			if ( empty( $url ) ) {
 				wp_die( -1 );
 			}
+			
+			$this->fetch_app( $url );
+			$items_markup = $this->get_items_markup( $url );
 
-			$this->import_new_items( $hashtag );
-			$items = $this->get_media_items( $hashtag );
-			$new_items_markup = $this->get_new_items_markup( $items, $existing_item_ids );
-
-			wp_die( json_encode( $new_items_markup ? $new_items_markup : 0 ) );
+			wp_die( json_encode( $items_markup ? $items_markup : 0 ) );
 		}
 
 		/**
-		 * Imports the latest items from media sources
+		 * Fetch app information from the site
 		 * @mvc Controller
 		 * 
-		 * @param string $hashtag
-		 * @param string $rate_limit 'respect' to enforce the rate limit, or 'ignore' to ignore it
+		 * @param string $url
 		 */
-		protected function import_new_items( $hashtag, $rate_limit = 'respect' ) {
-			$last_fetch = get_transient( WPSBox::PREFIX . 'last_media_fetch', 0 );
+		protected function fetch_app_info( $url ) {
+			$items = $this->fetch_app( $url );
+			if ( $items )
+				return $this->import_new_posts( $this->convert_items_to_posts( $items ) );
+			
+			return false;
+		}
+		
+		/**
+		 * Retrieves app attributes the given url
+		 * @mvc Model
+		 *
+		 * @param string $url
+		 * @return mixed array|false
+		 */
+		protected function fetch_app( $url ) {
+			$response = wp_remote_get( $url, array(
+				'httpversion' => '1.1',
+				'user-agent'  => 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/534.30 (KHTML, like Gecko) Chrome/12.0.742.112 Safari/534.30',
+			    'headers'     => array(),
+			    'sslverify'   => true,
+			) );
+			
+			if ( is_wp_error( $response ) ) {
+				return false;
+			}
+			
+			$body = $response['body'];
+			
+			$dom_document = new DOMDocument();
+			$dom_document->loadHTML( $body );
+			$dom_xpath = new DOMXpath( $dom_document );
+			
+			$item = array();
+			$item['app_title'] 			= $this->extract_value( $dom_xpath->query("//h1[@itemprop='name']") );
+			$item['app_logo'] 			= $this->extract_value( $dom_xpath->query("//img[contains(@class, 'appImage')]"), 'src' );
+			$item['app_description'] 	= $this->extract_value( $dom_xpath->query("//pre[@itemprop='description']") );
+			$item['app_cost'] 			= $this->extract_value( $dom_xpath->query("//span[@itemprop='price']") );
+			$item['app_rating_value'] 	= $this->extract_value( $dom_xpath->query("//div[@id='rating']/meta[@itemprop='ratingValue']"), 'content' );
+			$item['app_rating_count'] 	= $this->extract_value( $dom_xpath->query("//div[@id='rating']/meta[@itemprop='ratingCount']"), 'content' );
+			$item['app_publisher_text'] = $this->extract_value( $dom_xpath->query("//div[@id='publisher']/h4[@class='noteText']") );
+			$item['app_publisher'] 		= $this->extract_value( $dom_xpath->query("//div[@id='publisher']/span[@itemprop='publisher']") );
+			$item['app_filesize_text'] 	= $this->extract_value( $dom_xpath->query("//div[@id='packageSize']/h4[@class='noteText']") );
+			$item['app_filesize'] 		= $this->extract_value( $dom_xpath->query("//div[@id='packageSize']/span") );
+			$item['app_update_text'] 	= $this->extract_value( $dom_xpath->query("//div[@id='releaseDate']/h4[@class='noteText']") );
+			$item['app_date_published'] = $this->extract_value( $dom_xpath->query("//div[@id='releaseDate']/meta[@itemprop='datePublished']"), 'content' );
+			$item['app_date_updated'] 	= $this->extract_value( $dom_xpath->query("//div[@id='releaseDate']/span") );
+			$item['app_version_text'] 	= $this->extract_value( $dom_xpath->query("//div[@id='version']/h4[@class='noteText']") );
+			$item['app_version'] 		= $this->extract_value( $dom_xpath->query("//div[@id='version']/span") );
+			$item['app_categories'] 	= $this->extract_value( $dom_xpath->query("//strong[@itemprop='applicationCategory']") );
+						
+			return array( $item );
+		}
+		
+		/**
+		 * Converts data from external source into a post/postmeta format so it can be saved in the database
+		 * @mvc Model
+		 *
+		 * @param array $items
+		 * @return array
+		 */
+		public function convert_items_to_posts( $items ) {
+			$posts = array();
 
-			if ( 'ignore' == $rate_limit || self::refresh_interval_elapsed( $last_fetch, $this->refresh_interval ) ) {
-				set_transient( WPSBox::PREFIX . 'last_media_fetch', microtime( true ) );	// do this right away to minimize the chance of race conditions
-				
-				foreach ( WPSBox::get_instance()->media_sources as $source ) {
-					$source->import_new_items( $hashtag );
+			if ( $items ) {
+				foreach ( $items as $item ) {
+					$post_timestamp_gmt   = strtotime();
+					$post_timestamp_local = self::convert_gmt_timestamp_to_local( $post_timestamp_gmt );
+					
+					$post = array(
+						'post_author'   => get_current_user_id(),
+						'post_content'  => wp_kses( $item['app_description'], wp_kses_allowed_html( 'data' ), array( 'http', 'https', 'mailto' ) ),
+						'post_date'     => date( 'Y-m-d H:i:s', $post_timestamp_local ),
+						'post_date_gmt' => date( 'Y-m-d H:i:s', $post_timestamp_gmt ),
+						'post_status'   => 'publish',
+						'post_title'    => sanitize_text_field( $item['app_title'] ),
+						'post_type'     => self::POST_TYPE_SLUG,
+					);
+
+					$post_meta = array(
+						'app_cost' 				=> sanitize_text_field( $item['app_cost'] ),
+						'app_rating_value' 		=> sanitize_text_field( $item['app_rating_value'] ),
+						'app_rating_count' 		=> sanitize_text_field( $item['app_rating_count'] ),
+						'app_publisher_text' 	=> sanitize_text_field( $item['app_publisher_text'] ),
+						'app_publisher' 		=> sanitize_text_field( $item['app_publisher'] ),
+						'app_filesize_text' 	=> sanitize_text_field( $item['app_filesize_text'] ),
+						'app_filesize' 			=> sanitize_text_field( $item['app_filesize'] ),
+						'app_update_text' 		=> sanitize_text_field( $item['app_update_text'] ),
+						'app_date_published' 	=> sanitize_text_field( date( 'Y-m-d', strtotime( $item['app_date_published'] ) ) ),
+						'app_date_updated'		=> sanitize_text_field( date( 'Y-m-d', strtotime( $item['app_date_updated'] ) ) ),
+						'app_version_text' 		=> sanitize_text_field( $item['app_version_text'] ),
+						'app_version' 			=> sanitize_text_field( $item['app_version'] ),
+						'app_categories' 		=> sanitize_text_field( $item['app_categories'] ),
+						'media'            		=> array(
+							array(
+								'small_url' => isset( $item['app_logo'] ) ? esc_url_raw( str_replace( 'ws_icon_large', 'ws_icon_small', $item['app_logo'] ) ) : false,
+								'large_url' => isset( $item['app_logo'] ) ? esc_url_raw( $item['app_logo'] ) : false,
+								'type'      => 'image',
+							),
+						),
+					);
+
+					$posts[] = array(
+						'post'       => $post,
+						'post_meta'  => $post_meta,
+					);
 				}
 			}
+
+			return $posts;
 		}
-
+		
 		/**
-		 * Determines if the enough time has passed since the previous media fetch
+		 * Imports items from external source into the local database as posts
+		 * @mvc Controller
 		 *
-		 * @param int $last_fetch The number of seconds between the Unix epoch and the last time the data was fetched, as a float (i.e., the recorded output of microtime( true ) during the last fetch).
-		 * @param int $refresh_interval The minimum number of seconds that should elapse between refreshes
-		 * @return bool
+		 * @param array $posts
 		 */
-		protected static function refresh_interval_elapsed( $last_fetch, $refresh_interval ) {
-			$current_time = microtime( true );
-			$elapsed_time = $current_time - $last_fetch;
+		protected function import_new_posts( $posts ) {
+			global $wpdb;
 
-			return $elapsed_time > $refresh_interval;
+			if ( $posts ) {
+				$class = get_called_class();
+				$existing_unique_ids = self::get_existing_unique_ids( $class::POST_TYPE_SLUG );
+
+				foreach ( $posts as $post ) {
+					$post_id = wp_insert_post( $post['post'] );
+					if ( $post_id ) {
+						foreach ( $post['post_meta'] as $key => $value ) {
+							update_post_meta( $post_id, $key, $value );
+						}
+						
+						return array( get_post( $post_id ) );
+					}
+				}
+			}
 		}
 
 		/**
@@ -174,6 +281,24 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 			header( 'Content-Type: '. $content_type .'; charset=utf8' );
 			header( 'Content-Type: '. $content_type );
 			header( $_SERVER['SERVER_PROTOCOL'] . ' 200 OK' );
+		}
+		
+		private function extract_value( $elements, $attribute = '' ) {
+			if ( !is_null( $elements ) ) {
+				foreach ( $elements as $element ) {
+					if ( $attribute && $element->attributes ) {
+						foreach ( $element->attributes as $attr ) {
+							if ( $attr->name == $attribute ) {
+								return $attr->value;
+							}
+						}
+					}
+
+					return $element->nodeValue;
+				}
+			}
+			
+			return '';
 		}
 		
 	} // end WPSBoxShortcode

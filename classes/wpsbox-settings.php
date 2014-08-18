@@ -16,11 +16,15 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		protected static $writeable_properties = array( 'settings' );
 		protected $setting_names;
 		
-		const REQUIRED_CAPABILITY 	= 'manage_options';
-		const MENU_SLUG           	= 'wpsbox';
-		const SETTING_SLUG        	= 'wpsbox_settings';
-		const SETTING_TITLE			= 'WPSBox';
-		const SETTING_PREFIX		= 'wps_box_';
+		const REQUIRED_CAPABILITY 		= 'manage_options';
+		const MENU_SLUG           		= 'wpsbox';
+		const SETTING_SLUG        		= 'wpsbox_settings';
+		const SETTING_TITLE				= 'WPSBox';
+		const SETTING_PREFIX			= 'wps_box_';
+		
+		const POST_TYPE_NAME_SINGULAR 	= 'Windows Phone App';
+		const POST_TYPE_NAME_PLURAL   	= 'Windows Phone Apps';
+		const POST_TYPE_SLUG          	= 'windows-phone';
 
 		/**
 		 * Constructor
@@ -70,6 +74,15 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		public function init() {
 			self::$default_settings = self::get_default_settings();
 			$this->settings         = self::get_settings();
+			
+			self::register_post_type( 
+				self::POST_TYPE_SLUG, 
+				$this->get_post_type_params( 
+					self::POST_TYPE_SLUG, 
+					self::POST_TYPE_NAME_SINGULAR, 
+					self::POST_TYPE_NAME_PLURAL 
+				) 
+			);
 		}
 
 		/**
