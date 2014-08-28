@@ -22,7 +22,7 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		 */
 		protected function __construct() {
 			$this->register_hook_callbacks();
-			$this->view_folder = dirname( __DIR__ ) . '/views/'. str_replace( '.php', '', basename( __FILE__ ) );
+			$this->view_folder = dirname( __FILE__ ) . '/../views/'. str_replace( '.php', '', basename( __FILE__ ) );
 		}
 
 		/**
@@ -69,9 +69,9 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		public function shortcode_wpsbox( $attributes ) {
 			$attributes = shortcode_atts( array( 'url' => '' ), $attributes );
 			
-			$items = array();
+			$item = false;
 			if ( $attributes['url'] ) {
-				$items = $this->get_wpsbox( $attributes['url'] );
+				$item = $this->get_wpsbox( $attributes['url'] );
 			}
 
 			ob_start();
@@ -98,11 +98,14 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 				)
 			) );
 
-			if ( ( $items && post_cache_expired( $items ) ) || empty( $items ) ) {
+			if ( empty( $items ) ) { // ( $items && post_cache_expired( $items ) ) || 
 				$items = $this->fetch_app_info( $url );
 			}
 			
-			return $items;
+			if ( empty( $items ) )
+				return false;
+			
+			return $items[0];
 		}
 
 		/**
