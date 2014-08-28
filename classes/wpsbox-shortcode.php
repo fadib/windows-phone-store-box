@@ -71,7 +71,7 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 			
 			$items = array();
 			if ( $attributes['url'] ) {
-				$items = self::get_wpsbox( $attributes['url'] );
+				$items = $this->get_wpsbox( $attributes['url'] );
 			}
 
 			ob_start();
@@ -101,7 +101,7 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 			if ( ( $items && post_cache_expired( $items ) ) || empty( $items ) ) {
 				$items = $this->fetch_app_info( $url );
 			}
-
+			
 			return $items;
 		}
 
@@ -165,6 +165,7 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 			$dom_xpath = new DOMXpath( $dom_document );
 			
 			$item = array();
+			$item['app_url']			= $url;
 			$item['app_title'] 			= $this->extract_value( $dom_xpath->query("//h1[@itemprop='name']") );
 			$item['app_logo'] 			= $this->extract_value( $dom_xpath->query("//img[contains(@class, 'appImage')]"), 'src' );
 			$item['app_description'] 	= $this->extract_value( $dom_xpath->query("//pre[@itemprop='description']") );
@@ -197,7 +198,7 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 
 			if ( $items ) {
 				foreach ( $items as $item ) {
-					$post_timestamp_gmt   = strtotime();
+					$post_timestamp_gmt   = time();
 					$post_timestamp_local = self::convert_gmt_timestamp_to_local( $post_timestamp_gmt );
 					
 					$post = array(
@@ -207,10 +208,11 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 						'post_date_gmt' => date( 'Y-m-d H:i:s', $post_timestamp_gmt ),
 						'post_status'   => 'publish',
 						'post_title'    => sanitize_text_field( $item['app_title'] ),
-						'post_type'     => self::POST_TYPE_SLUG,
+						'post_type'     => WPSBoxSettings::POST_TYPE_SLUG,
 					);
 
 					$post_meta = array(
+						'app_url' 				=> sanitize_text_field( $item['app_url'] ),
 						'app_cost' 				=> sanitize_text_field( $item['app_cost'] ),
 						'app_rating_value' 		=> sanitize_text_field( $item['app_rating_value'] ),
 						'app_rating_count' 		=> sanitize_text_field( $item['app_rating_count'] ),
@@ -251,11 +253,8 @@ if ( ! class_exists( 'WPSBoxShortcode' ) ) {
 		 */
 		protected function import_new_posts( $posts ) {
 			global $wpdb;
-
+		
 			if ( $posts ) {
-				$class = get_called_class();
-				$existing_unique_ids = self::get_existing_unique_ids( $class::POST_TYPE_SLUG );
-
 				foreach ( $posts as $post ) {
 					$post_id = wp_insert_post( $post['post'] );
 					if ( $post_id ) {

@@ -216,8 +216,7 @@ if ( ! class_exists( 'WPSBoxSettings' ) ) {
 		 * @param array $field
 		 */
 		public function markup_settings_fields( $field ) {
-			$class = get_called_class();
-			$setting = str_replace( $class::SETTING_PREFIX, '', $field['label_for'] );
+			$setting = str_replace( self::SETTING_PREFIX, '', $field['label_for'] );
 			
 			require_once( dirname( __DIR__ ) . '/views/wpsbox-settings/page-settings-fields.php' );
 		}
